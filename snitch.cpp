@@ -23,30 +23,44 @@ int main(int argc, char** argv)
   img_file.close();
   
   twitter::client client(auth);
+  std::set<twitter::user_id> streamed_friends;
   client.setUserStreamNotifyCallback([&] (twitter::notification n) {
-    if (n.getType() == twitter::notification::type::tweet)
+    if (n.getType() == twitter::notification::type::friends)
     {
-      std::string orig = n.getTweet().getText();
-      std::string canonical;
-      std::transform(std::begin(orig), std::end(orig), std::back_inserter(canonical), [] (char ch) {
-        return std::tolower(ch);
-      });
-      
-      if (canonical.find("calling the cops") != std::string::npos)
+      streamed_friends = n.getFriends();
+    } else if (n.getType() == twitter::notification::type::follow)
+    {
+      streamed_friends.insert(n.getUserID());
+    } else if (n.getType() == twitter::notification::type::unfollow)
+    {
+      streamed_friends.erase(n.getUserID());
+    } else if (n.getType() == twitter::notification::type::tweet)
+    {
+      // Only monitor people you are following
+      if (streamed_friends.count(n.getTweet().getAuthor().getID()) == 1)
       {
-        std::cout << "Calling the cops on @" << n.getTweet().getAuthor().getScreenName() << std::endl;
-        
-        long media_id;
-        twitter::response resp = client.uploadMedia("image/jpeg", (const char*) img_buf, img_len, media_id);
-        if (resp != twitter::response::ok)
+        std::string orig = n.getTweet().getText();
+        std::string canonical;
+        std::transform(std::begin(orig), std::end(orig), std::back_inserter(canonical), [] (char ch) {
+          return std::tolower(ch);
+        });
+      
+        if (canonical.find("calling the cops") != std::string::npos)
         {
-          std::cout << "Twitter error while uploading image: " << resp << std::endl;
-        } else {
-          twitter::tweet tw;
-          resp = client.updateStatus("@" + n.getTweet().getAuthor().getScreenName(), tw, n.getTweet(), {media_id});
+          std::cout << "Calling the cops on @" << n.getTweet().getAuthor().getScreenName() << std::endl;
+        
+          long media_id;
+          twitter::response resp = client.uploadMedia("image/jpeg", (const char*) img_buf, img_len, media_id);
           if (resp != twitter::response::ok)
           {
-            std::cout << "Twitter error while tweeting: " << resp << std::endl;
+            std::cout << "Twitter error while uploading image: " << resp << std::endl;
+          } else {
+            twitter::tweet tw;
+            resp = client.updateStatus("@" + n.getTweet().getAuthor().getScreenName(), tw, n.getTweet(), {media_id});
+            if (resp != twitter::response::ok)
+            {
+              std::cout << "Twitter error while tweeting: " << resp << std::endl;
+            }
           }
         }
       }
