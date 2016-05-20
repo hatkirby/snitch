@@ -30,10 +30,10 @@ int main(int argc, char** argv)
       streamed_friends = n.getFriends();
     } else if (n.getType() == twitter::notification::type::follow)
     {
-      streamed_friends.insert(n.getUserID());
+      streamed_friends.insert(n.getUser().getID());
     } else if (n.getType() == twitter::notification::type::unfollow)
     {
-      streamed_friends.erase(n.getUserID());
+      streamed_friends.erase(n.getUser().getID());
     } else if (n.getType() == twitter::notification::type::tweet)
     {
       // Only monitor people you are following
@@ -80,7 +80,7 @@ int main(int argc, char** argv)
   client.startUserStream();
   for (;;)
   {
-    std::this_thread::sleep_for(std::chrono::hours(4));
+    std::this_thread::sleep_for(std::chrono::minutes(1));
     
     std::set<twitter::user_id> friends;
     std::set<twitter::user_id> followers;
@@ -90,22 +90,24 @@ int main(int argc, char** argv)
       resp = client.getFollowers(followers);
       if (resp == twitter::response::ok)
       {
-        auto frit = std::begin(friends);
-        auto foit = std::begin(followers);
-        
-        while (frit != std::end(friends))
+        std::list<twitter::user_id> old_friends, new_followers;
+        std::set_difference(std::begin(friends), std::end(friends), std::begin(followers), std::end(followers), std::back_inserter(old_friends));
+        std::set_difference(std::begin(followers), std::end(followers), std::begin(friends), std::end(friends), std::back_inserter(new_followers));
+        for (auto f : old_friends)
         {
-          auto match = std::mismatch(frit, std::end(friends), foit);
-          if (match.first != std::end(friends))
+          resp = client.unfollow(f);
+          if (resp != twitter::response::ok)
           {
-            resp = client.unfollow(*match.first);
-            if (resp != twitter::response::ok)
-            {
-              std::cout << "Twitter error while unfollowing" << std::endl;
-            }
-            
-            frit = match.first;
-            frit++;
+            std::cout << "Twitter error while unfollowing" << std::endl;
+          }
+        }
+        
+        for (auto f : new_followers)
+        {
+          resp = client.follow(f);
+          if (resp != twitter::response::ok)
+          {
+            std::cout << "Twitter error while following" << std::endl;
           }
         }
       } else {
@@ -114,6 +116,8 @@ int main(int argc, char** argv)
     } else {
       std::cout << "Twitter error while getting friends: " << resp << std::endl;
     }
+    
+    std::this_thread::sleep_for(std::chrono::hours(4));
   }
   
   client.stopUserStream();
