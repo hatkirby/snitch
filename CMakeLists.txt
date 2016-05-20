@@ -10,4 +10,4 @@ include_directories(vendor/libtwittercpp/src vendor/libtwittercpp/vendor/json/sr
 add_executable(snitch snitch.cpp)
 set_property(TARGET snitch PROPERTY CXX_STANDARD 11)
 set_property(TARGET snitch PROPERTY CXX_STANDARD_REQUIRED ON)
-target_link_libraries(snitch yaml-cpp twitter++ curlcpp curl)
+target_link_libraries(snitch yaml-cpp twitter++ curlcpp curl pthread)
