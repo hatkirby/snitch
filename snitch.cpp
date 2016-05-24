@@ -3,6 +3,7 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <iostream>
 
 int main(int argc, char** argv)
 {
@@ -56,7 +57,7 @@ int main(int argc, char** argv)
             std::cout << "Twitter error while uploading image: " << resp << std::endl;
           } else {
             twitter::tweet tw;
-            resp = client.updateStatus("@" + n.getTweet().getAuthor().getScreenName(), tw, n.getTweet(), {media_id});
+            resp = client.updateStatus(client.generateReplyPrefill(n.getTweet()), tw, n.getTweet(), {media_id});
             if (resp != twitter::response::ok)
             {
               std::cout << "Twitter error while tweeting: " << resp << std::endl;
