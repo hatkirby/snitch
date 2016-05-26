@@ -26,6 +26,7 @@ int main(int argc, char** argv)
   
   twitter::client client(auth);
   std::set<twitter::user_id> streamed_friends;
+  client.setUserStreamReceiveAllReplies(true);
   client.setUserStreamNotifyCallback([&] (twitter::notification n) {
     if (n.getType() == twitter::notification::type::friends)
     {
