@@ -24,6 +24,11 @@ int main(int argc, char** argv)
   img_file.read(img_buf, img_len);
   img_file.close();
   
+  std::vector<std::string> triggers {
+    "calling the cops",
+    "calling the police"
+  };
+  
   twitter::client client(auth);
   std::set<twitter::user_id> streamed_friends;
   client.setUserStreamReceiveAllReplies(true);
@@ -47,23 +52,28 @@ int main(int argc, char** argv)
         std::transform(std::begin(orig), std::end(orig), std::back_inserter(canonical), [] (char ch) {
           return std::tolower(ch);
         });
-      
-        if (canonical.find("calling the cops") != std::string::npos)
-        {
-          std::cout << "Calling the cops on @" << n.getTweet().getAuthor().getScreenName() << std::endl;
         
-          long media_id;
-          twitter::response resp = client.uploadMedia("image/jpeg", (const char*) img_buf, img_len, media_id);
-          if (resp != twitter::response::ok)
+        for (auto trigger : triggers)
+        {
+          if (canonical.find(trigger) != std::string::npos)
           {
-            std::cout << "Twitter error while uploading image: " << resp << std::endl;
-          } else {
-            twitter::tweet tw;
-            resp = client.updateStatus(client.generateReplyPrefill(n.getTweet()), tw, n.getTweet(), {media_id});
+            std::cout << "Calling the cops on @" << n.getTweet().getAuthor().getScreenName() << std::endl;
+        
+            long media_id;
+            twitter::response resp = client.uploadMedia("image/jpeg", (const char*) img_buf, img_len, media_id);
             if (resp != twitter::response::ok)
             {
-              std::cout << "Twitter error while tweeting: " << resp << std::endl;
+              std::cout << "Twitter error while uploading image: " << resp << std::endl;
+            } else {
+              twitter::tweet tw;
+              resp = client.updateStatus(client.generateReplyPrefill(n.getTweet()), tw, n.getTweet(), {media_id});
+              if (resp != twitter::response::ok)
+              {
+                std::cout << "Twitter error while tweeting: " << resp << std::endl;
+              }
             }
+            
+            break;
           }
         }
       }
