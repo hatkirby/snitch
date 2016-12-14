@@ -8,7 +8,14 @@
 
 int main(int argc, char** argv)
 {
-  YAML::Node config = YAML::LoadFile("config.yml");
+  if (argc != 2)
+  {
+    std::cout << "usage: snitch [configfile]" << std::endl;
+    return -1;
+  }
+
+  std::string configfile(argv[1]);
+  YAML::Node config = YAML::LoadFile(configfile);
     
   twitter::auth auth;
   auth.setConsumerKey(config["consumer_key"].as<std::string>());
@@ -16,7 +23,7 @@ int main(int argc, char** argv)
   auth.setAccessKey(config["access_key"].as<std::string>());
   auth.setAccessSecret(config["access_secret"].as<std::string>());
   
-  std::ifstream img_file("image.jpg");
+  std::ifstream img_file(config["image"].as<std::string>());
   img_file.seekg(0, std::ios::end);
   size_t img_len = img_file.tellg();
   char* img_buf = new char[img_len];
