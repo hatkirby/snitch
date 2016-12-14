@@ -73,7 +73,7 @@ int main(int argc, char** argv)
             try
             {
               long media_id = client.uploadMedia("image/jpeg", (const char*) img_buf, img_len);
-              client.replyToTweet(n.getTweet().generateReplyPrefill(), n.getTweet().getID(), {media_id});
+              client.replyToTweet(n.getTweet().generateReplyPrefill(client.getUser()), n.getTweet().getID(), {media_id});
             } catch (const twitter::twitter_error& e)
             {
               std::cout << "Twitter error: " << e.what() << std::endl;
@@ -87,7 +87,7 @@ int main(int argc, char** argv)
     {
       try
       {
-        n.getUser().follow();
+        client.follow(n.getUser());
       } catch (const twitter::twitter_error& e)
       {
         std::cout << "Twitter error while following @" << n.getUser().getScreenName() << ": " << e.what() << std::endl;
@@ -101,8 +101,8 @@ int main(int argc, char** argv)
     
     try
     {
-      std::set<twitter::user_id> friends = client.getUser().getFriends();
-      std::set<twitter::user_id> followers = client.getUser().getFollowers();
+      std::set<twitter::user_id> friends = client.getFriends();
+      std::set<twitter::user_id> followers = client.getFollowers();
 
       std::list<twitter::user_id> old_friends, new_followers;
       std::set_difference(std::begin(friends), std::end(friends), std::begin(followers), std::end(followers), std::back_inserter(old_friends));
