@@ -33,7 +33,9 @@ int main(int argc, char** argv)
   
   std::vector<std::string> triggers {
     "calling the cops",
-    "calling the police"
+    "calling the police",
+    "call the cops",
+    "call the police"
   };
   
   // Initialize the client
