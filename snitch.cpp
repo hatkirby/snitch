@@ -6,6 +6,9 @@
 #include <iostream>
 #include <algorithm>
 
+// Sync followers every 4 hours.
+const int CHECK_FOLLOWERS_EVERY = 4 * 60 / 5;
+
 int main(int argc, char** argv)
 {
   if (argc != 2)
@@ -16,13 +19,13 @@ int main(int argc, char** argv)
 
   std::string configfile(argv[1]);
   YAML::Node config = YAML::LoadFile(configfile);
-    
-  twitter::auth auth;
-  auth.setConsumerKey(config["consumer_key"].as<std::string>());
-  auth.setConsumerSecret(config["consumer_secret"].as<std::string>());
-  auth.setAccessKey(config["access_key"].as<std::string>());
-  auth.setAccessSecret(config["access_secret"].as<std::string>());
-  
+
+  twitter::auth auth(
+    config["consumer_key"].as<std::string>(),
+    config["consumer_secret"].as<std::string>(),
+    config["access_key"].as<std::string>(),
+    config["access_secret"].as<std::string>());
+
   std::ifstream img_file(config["image"].as<std::string>());
   img_file.seekg(0, std::ios::end);
   size_t img_len = img_file.tellg();
@@ -30,100 +33,133 @@ int main(int argc, char** argv)
   img_file.seekg(0, std::ios::beg);
   img_file.read(img_buf, img_len);
   img_file.close();
-  
+
   std::vector<std::string> triggers {
     "calling the cops",
     "calling the police",
     "call the cops",
     "call the police"
   };
-  
+
+  auto startedTime = std::chrono::system_clock::now();
+
   // Initialize the client
   twitter::client client(auth);
-  std::this_thread::sleep_for(std::chrono::minutes(1));
-  
-  // Start streaming
-  std::cout << "Starting streaming" << std::endl;
-  std::set<twitter::user_id> streamed_friends;
-  twitter::stream userStream(client, [&] (const twitter::notification& n) {
-    if (n.getType() == twitter::notification::type::friends)
-    {
-      streamed_friends = n.getFriends();
-    } else if (n.getType() == twitter::notification::type::follow)
-    {
-      streamed_friends.insert(n.getUser().getID());
-    } else if (n.getType() == twitter::notification::type::unfollow)
-    {
-      streamed_friends.erase(n.getUser().getID());
-    } else if (n.getType() == twitter::notification::type::tweet)
-    {
-      // Only monitor people you are following
-      if (streamed_friends.count(n.getTweet().getAuthor().getID()) == 1)
-      {
-        std::string orig = n.getTweet().getText();
-        std::string canonical;
-        std::transform(std::begin(orig), std::end(orig), std::back_inserter(canonical), [] (char ch) {
-          return std::tolower(ch);
-        });
-        
-        for (auto trigger : triggers)
-        {
-          if (canonical.find(trigger) != std::string::npos)
-          {
-            std::cout << "Calling the cops on @" << n.getTweet().getAuthor().getScreenName() << std::endl;
-        
-            try
-            {
-              long media_id = client.uploadMedia("image/jpeg", (const char*) img_buf, img_len);
-              client.replyToTweet(n.getTweet().generateReplyPrefill(client.getUser()), n.getTweet().getID(), {media_id});
-            } catch (const twitter::twitter_error& e)
-            {
-              std::cout << "Twitter error: " << e.what() << std::endl;
-            }
-            
-            break;
-          }
-        }
-      }
-    } else if (n.getType() == twitter::notification::type::followed)
-    {
-      try
-      {
-        client.follow(n.getUser());
-      } catch (const twitter::twitter_error& e)
-      {
-        std::cout << "Twitter error while following @" << n.getUser().getScreenName() << ": " << e.what() << std::endl;
-      }
-    }
-  }, true, true);
+
+  std::set<twitter::user_id> friends;
+  int followerTimeout = 0;
 
   for (;;)
   {
-    std::this_thread::sleep_for(std::chrono::minutes(1));
-    
+    if (followerTimeout == 0)
+    {
+      // Sync friends with followers.
+      try
+      {
+        friends = client.getFriends();
+
+        std::set<twitter::user_id> followers = client.getFollowers();
+
+        std::list<twitter::user_id> oldFriends;
+        std::set_difference(
+          std::begin(friends),
+          std::end(friends),
+          std::begin(followers),
+          std::end(followers),
+          std::back_inserter(oldFriends));
+
+        std::list<twitter::user_id> newFollowers;
+        std::set_difference(
+          std::begin(followers),
+          std::end(followers),
+          std::begin(friends),
+          std::end(friends),
+          std::back_inserter(newFollowers));
+
+        for (twitter::user_id f : oldFriends)
+        {
+          client.unfollow(f);
+        }
+
+        for (twitter::user_id f : newFollowers)
+        {
+          client.follow(f);
+        }
+      } catch (const twitter::twitter_error& error)
+      {
+        std::cout << "Twitter error while syncing followers: " << error.what()
+          << std::endl;
+      }
+
+      followerTimeout = CHECK_FOLLOWERS_EVERY;
+    }
+
+    followerTimeout--;
+
     try
     {
-      std::set<twitter::user_id> friends = client.getFriends();
-      std::set<twitter::user_id> followers = client.getFollowers();
+      // Poll the timeline.
+      std::list<twitter::tweet> tweets = client.getHomeTimeline().poll();
 
-      std::list<twitter::user_id> old_friends, new_followers;
-      std::set_difference(std::begin(friends), std::end(friends), std::begin(followers), std::end(followers), std::back_inserter(old_friends));
-      std::set_difference(std::begin(followers), std::end(followers), std::begin(friends), std::end(friends), std::back_inserter(new_followers));
+      for (twitter::tweet& tweet : tweets)
+      {
+        auto createdTime =
+          std::chrono::system_clock::from_time_t(tweet.getCreatedAt());
 
-      for (auto f : old_friends)
-      {
-        client.unfollow(f);
+        if (
+          // Only monitor people you are following
+          friends.count(tweet.getAuthor().getID()) &&
+          // Ignore tweets from before the bot started up
+          createdTime > startedTime)
+        {
+          std::string orig = tweet.getText();
+          std::string canonical;
+
+          std::transform(
+            std::begin(orig),
+            std::end(orig),
+            std::back_inserter(canonical),
+            [] (char ch) {
+              return std::tolower(ch);
+            });
+
+          for (const std::string& trigger : triggers)
+          {
+            if (canonical.find(trigger) != std::string::npos)
+            {
+              std::cout << "Calling the cops on @"
+                << tweet.getAuthor().getScreenName() << std::endl;
+
+              try
+              {
+                long media_id =
+                  client.uploadMedia(
+                    "image/jpeg",
+                    static_cast<const char*>(img_buf),
+                    img_len);
+
+                client.replyToTweet(
+                  tweet.generateReplyPrefill(client.getUser()),
+                  tweet.getID(),
+                  {media_id});
+              } catch (const twitter::twitter_error& e)
+              {
+                std::cout << "Twitter error while tweeting: " << e.what()
+                  << std::endl;
+              }
+
+              break;
+            }
+          }
+        }
       }
-      
-      for (auto f : new_followers)
-      {
-        client.follow(f);
-      }
-    } catch (const twitter::twitter_error& e)
+    } catch (const twitter::rate_limit_exceeded&)
     {
-      std::cout << "Twitter error: " << e.what() << std::endl;
+      // Wait out the rate limit (10 minutes here and 5 below = 15).
+      std::this_thread::sleep_for(std::chrono::minutes(10));
     }
-    
-    std::this_thread::sleep_for(std::chrono::hours(4));
+
+    // We can poll the timeline at most once every five minutes.
+    std::this_thread::sleep_for(std::chrono::minutes(5));
   }
 }
