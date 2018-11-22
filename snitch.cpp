@@ -115,6 +115,8 @@ int main(int argc, char** argv)
         if (
           // Only monitor people you are following
           friends.count(tweet.getAuthor().getID()) &&
+          // Ignore retweets
+          !tweet.isRetweet() &&
           // Ignore tweets from before the bot started up
           createdTime > startedTime)
         {
